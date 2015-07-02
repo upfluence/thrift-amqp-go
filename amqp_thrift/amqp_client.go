@@ -104,7 +104,7 @@ func (c *TAMQPClient) Write(buf []byte) (int, error) {
 }
 
 func (c *TAMQPClient) Flush() error {
-	return c.Channel.Publish(
+	err := c.Channel.Publish(
 		c.ExchangeName,
 		c.RoutingKey,
 		false,
@@ -115,6 +115,10 @@ func (c *TAMQPClient) Flush() error {
 			CorrelationId: generateUUID(),
 		},
 	)
+
+	buf := make([]byte, 0, 1024)
+	c.requestBuffer = bytes.NewBuffer(buf)
+	return err
 }
 
 func generateUUID() string {
