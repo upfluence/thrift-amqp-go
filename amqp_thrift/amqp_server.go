@@ -48,7 +48,7 @@ func (s *TServerAMQP) Listen() error {
 	if err = s.Channel.ExchangeDeclare(
 		s.ExchangeName, // name osf the exchange
 		ExchangeType,   // type
-		true,           // durable
+		false,          // durable
 		false,          // delete when complete
 		false,          // internal
 		false,          // noWait
