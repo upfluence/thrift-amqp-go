@@ -48,7 +48,7 @@ func (s *TServerAMQP) Listen() error {
 	if err = s.Channel.ExchangeDeclare(
 		s.ExchangeName, // name osf the exchange
 		ExchangeType,   // type
-		false,          // durable
+		true,           // durable
 		false,          // delete when complete
 		false,          // internal
 		false,          // noWait
@@ -60,8 +60,8 @@ func (s *TServerAMQP) Listen() error {
 	if _, err = s.Channel.QueueDeclare(
 		s.QueueName, // name of the queue
 		true,        // durable
-		true,        // delete when usused
-		true,        // exclusive
+		false,       // delete when usused
+		false,       // exclusive
 		false,       // noWait
 		nil,         // arguments
 	); err != nil {
