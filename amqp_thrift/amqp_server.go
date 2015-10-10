@@ -19,14 +19,23 @@ type TServerAMQP struct {
 	deliveries   <-chan amqp.Delivery
 	mu           sync.RWMutex
 	interrupted  bool
+	Options      *ServerOptions
 }
 
-func NewTServerAMQP(amqpURI, exchangeName, routingKey, queueName string) (*TServerAMQP, error) {
+type ServerOptions struct {
+	Prefetch uint
+}
+
+func NewTServerAMQP(
+	amqpURI, exchangeName, routingKey, queueName string,
+	opts *ServerOptions,
+) (*TServerAMQP, error) {
 	return &TServerAMQP{
 		URI:          amqpURI,
 		ExchangeName: exchangeName,
 		RoutingKey:   routingKey,
 		QueueName:    queueName,
+		Options:      opts,
 	}, nil
 }
 
@@ -41,6 +50,12 @@ func (s *TServerAMQP) Listen() error {
 
 	if s.Channel == nil {
 		if s.Channel, err = s.Connection.Channel(); err != nil {
+			return err
+		}
+	}
+
+	if opts := s.Options; opts != nil && opts.Prefetch != 0 {
+		if err := s.Channel.Qos(int(opts.Prefetch), 0, false); err != nil {
 			return err
 		}
 	}
