@@ -96,7 +96,7 @@ func (s *TServerAMQP) Listen() error {
 	s.deliveries, err = s.Channel.Consume(
 		s.QueueName, // name
 		"",          // consumerTag,
-		true,        // noAck
+		false,       // noAck
 		false,       // exclusive
 		false,       //            noLocal
 		false,       // noWait

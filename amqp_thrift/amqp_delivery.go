@@ -2,7 +2,7 @@ package amqp_thrift
 
 import (
 	"bytes"
-	"errors"
+
 	"github.com/streadway/amqp"
 	"github.com/upfluence/thrift/lib/go/thrift"
 )
@@ -43,7 +43,7 @@ func (d *TAMQPDelivery) Write(buf []byte) (int, error) {
 
 func (d *TAMQPDelivery) Flush() error {
 	if d.Delivery.ReplyTo != "" {
-		return d.Channel.Publish(
+		if err := d.Channel.Publish(
 			"",
 			d.Delivery.ReplyTo,
 			false,
@@ -52,8 +52,12 @@ func (d *TAMQPDelivery) Flush() error {
 				CorrelationId: d.Delivery.CorrelationId,
 				Body:          d.writeBuffer.Bytes(),
 			},
-		)
+		); err != nil {
+			return err
+		} else {
+			return d.Delivery.Ack(false)
+		}
 	} else {
-		return errors.New("No reply-to queue setted")
+		return d.Delivery.Ack(false)
 	}
 }
