@@ -1,5 +1,2 @@
-test:
-  pre:
-    - go get ./...
-  override:
-    - go test -v ./...
+general:
+  build_dir: integration
