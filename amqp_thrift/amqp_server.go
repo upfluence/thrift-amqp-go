@@ -1,106 +1,144 @@
 package amqp_thrift
 
 import (
+	"bytes"
 	"errors"
+	"log"
+	"runtime/debug"
+
 	"github.com/streadway/amqp"
 	"github.com/upfluence/thrift/lib/go/thrift"
-	"sync"
 )
 
-const ExchangeType string = "direct"
+const (
+	exchangeType        = "direct"
+	DefaultAMQPURI      = "amqp://guest:guest@localhost:5672/%2F"
+	DefaultQueueName    = "rpc-server-queue"
+	DefaultRoutingKey   = "thrift"
+	DefaultExchangeName = "rpc-server-exchange"
+)
 
-type TServerAMQP struct {
-	URI          string
-	Connection   *amqp.Connection
-	Channel      *amqp.Channel
-	QueueName    string
-	ExchangeName string
-	RoutingKey   string
-	deliveries   <-chan amqp.Delivery
-	mu           sync.RWMutex
-	interrupted  bool
-	Options      *ServerOptions
+type TAMQPServer struct {
+	quit chan struct{}
+
+	processorFactory      thrift.TProcessorFactory
+	inputProtocolFactory  thrift.TProtocolFactory
+	outputProtocolFactory thrift.TProtocolFactory
+
+	connection *amqp.Connection
+	channel    *amqp.Channel
+	deliveries <-chan amqp.Delivery
+	options    ServerOptions
+
+	errorLogger *func(error)
 }
 
 type ServerOptions struct {
-	Prefetch uint
+	Prefetch     uint
+	AmqpURI      string
+	ExchangeName string
+	RoutingKey   string
+	QueueName    string
+	ConsumerTag  string
 }
 
-func NewTServerAMQP(
-	amqpURI, exchangeName, routingKey, queueName string,
-	opts *ServerOptions,
-) (*TServerAMQP, error) {
-	return &TServerAMQP{
-		URI:          amqpURI,
-		ExchangeName: exchangeName,
-		RoutingKey:   routingKey,
-		QueueName:    queueName,
-		Options:      opts,
+func NewTAMQPServer(
+	processor thrift.TProcessor,
+	protocolFactory thrift.TProtocolFactory,
+	opts ServerOptions,
+) (*TAMQPServer, error) {
+	return &TAMQPServer{
+		processorFactory:      thrift.NewTProcessorFactory(processor),
+		inputProtocolFactory:  protocolFactory,
+		outputProtocolFactory: protocolFactory,
+		options:               opts,
+		quit:                  make(chan struct{}, 1),
 	}, nil
 }
 
-func (s *TServerAMQP) Listen() error {
+func (s *TAMQPServer) Listen() error {
 	var err error
 
-	if s.Connection == nil {
-		if s.Connection, err = amqp.Dial(s.URI); err != nil {
+	if s.connection == nil {
+		uri := s.options.AmqpURI
+
+		if uri == "" {
+			uri = DefaultAMQPURI
+		}
+
+		if s.connection, err = amqp.Dial(uri); err != nil {
 			return err
 		}
 	}
 
-	if s.Channel == nil {
-		if s.Channel, err = s.Connection.Channel(); err != nil {
+	if s.channel == nil {
+		if s.channel, err = s.connection.Channel(); err != nil {
 			return err
 		}
 	}
 
-	if opts := s.Options; opts != nil && opts.Prefetch != 0 {
-		if err := s.Channel.Qos(int(opts.Prefetch), 0, false); err != nil {
+	if opts := s.options; opts.Prefetch != 0 {
+		if err := s.channel.Qos(int(opts.Prefetch), 0, false); err != nil {
 			return err
 		}
 	}
 
-	if err = s.Channel.ExchangeDeclare(
-		s.ExchangeName, // name osf the exchange
-		ExchangeType,   // type
-		false,          // durable
-		false,          // delete when complete
-		false,          // internal
-		false,          // noWait
-		nil,            // arguments
+	exchangeName := s.options.ExchangeName
+	if exchangeName == "" {
+		exchangeName = DefaultExchangeName
+	}
+
+	queueName := s.options.QueueName
+	if queueName == "" {
+		queueName = DefaultQueueName
+	}
+
+	routingKey := s.options.RoutingKey
+	if routingKey == "" {
+		routingKey = DefaultRoutingKey
+	}
+
+	if err = s.channel.ExchangeDeclare(
+		exchangeName, // name osf the exchange
+		exchangeType, // type
+		false,        // durable
+		false,        // delete when complete
+		false,        // internal
+		false,        // noWait
+		nil,          // arguments
 	); err != nil {
 		return err
 	}
 
-	if _, err = s.Channel.QueueDeclare(
-		s.QueueName, // name of the queue
-		true,        // durable
-		false,       // delete when usused
-		false,       // exclusive
-		false,       // noWait
-		nil,         // arguments
+	if _, err = s.channel.QueueDeclare(
+		queueName, // name of the queue
+		true,      // durable
+		false,     // delete when usused
+		false,     // exclusive
+		false,     // noWait
+		nil,       // arguments
 	); err != nil {
 		return err
 	}
 
-	if err = s.Channel.QueueBind(
-		s.QueueName,    // name of the queue
-		s.RoutingKey,   // bindingKey
-		s.ExchangeName, // sourceExchange
-		false,          // noWait
-		nil,            // arguments
+	if err = s.channel.QueueBind(
+		queueName,    // name of the queue
+		routingKey,   // bindingKey
+		exchangeName, // sourceExchange
+		false,        // noWait
+		nil,          // arguments
 	); err != nil {
 		return err
 	}
 
-	s.deliveries, err = s.Channel.Consume(
-		s.QueueName, // name
-		"",          // consumerTag,
-		false,       // noAck
-		false,       // exclusive
-		false,       //            noLocal
-		false,       // noWait
-		nil,         // arguments
+	s.deliveries, err = s.channel.Consume(
+		queueName,             // name
+		s.options.ConsumerTag, // consumerTag,
+		false, // noAck
+		false, // exclusive
+		false, //            noLocal
+		false, // noWait
+		nil,   // arguments
 	)
 
 	if err != nil {
@@ -110,36 +148,140 @@ func (s *TServerAMQP) Listen() error {
 	return nil
 }
 
-func (s *TServerAMQP) Close() error {
-	if s.Connection == nil {
+func (s *TAMQPServer) Stop() error {
+	s.quit <- struct{}{}
+
+	if s.connection == nil {
 		return errors.New("The connection is not opened")
 	}
 
 	defer func() {
-		s.Channel = nil
-		s.Connection = nil
+		s.channel = nil
+		s.connection = nil
 	}()
 
-	s.Connection.Close()
+	s.connection.Close()
 
 	return nil
 }
 
-func (s *TServerAMQP) Accept() (thrift.TTransport, error) {
-	s.mu.RLock()
-	interrupted := s.interrupted
-	s.mu.RUnlock()
-
-	if interrupted {
-		return nil, errors.New("Transport Interrupted")
-	}
-	return NewTAMQPDelivery(<-s.deliveries, s.Channel)
+func (p *TAMQPServer) ProcessorFactory() thrift.TProcessorFactory {
+	return p.processorFactory
 }
 
-func (s *TServerAMQP) Interrupt() error {
-	s.mu.Lock()
-	s.interrupted = true
-	s.mu.Unlock()
+func (p *TAMQPServer) ServerTransport() thrift.TServerTransport {
+	return nil
+}
+
+func (p *TAMQPServer) InputTransportFactory() thrift.TTransportFactory {
+	return nil
+}
+
+func (p *TAMQPServer) OutputTransportFactory() thrift.TTransportFactory {
+	return nil
+}
+
+func (p *TAMQPServer) InputProtocolFactory() thrift.TProtocolFactory {
+	return p.inputProtocolFactory
+}
+
+func (p *TAMQPServer) OutputProtocolFactory() thrift.TProtocolFactory {
+	return p.outputProtocolFactory
+}
+
+func (p *TAMQPServer) SetErrorLogger(fn func(error)) {
+	p.errorLogger = &fn
+}
+
+func (s *TAMQPServer) AcceptLoop() error {
+	var client thrift.TTransport
+
+	for {
+		select {
+		case delivery := <-s.deliveries:
+			client, _ = NewTAMQPDelivery(delivery, s.channel)
+		case <-s.quit:
+			return nil
+		}
+
+		go func() {
+			if err := s.processRequests(client); err != nil {
+				if s.errorLogger != nil {
+					(*s.errorLogger)(err)
+				} else {
+					log.Println("error processing request:", err)
+				}
+			}
+		}()
+	}
+}
+
+func (p *TAMQPServer) Serve() error {
+	err := p.Listen()
+	if err != nil {
+		return err
+	}
+	p.AcceptLoop()
+	return nil
+}
+
+func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
+	tFactory := thrift.NewTTransportFactory()
+	processor := p.processorFactory.GetProcessor(client)
+	inputTransport := tFactory.GetTransport(client)
+	outputTransport := tFactory.GetTransport(client)
+	inputProtocol := p.inputProtocolFactory.GetProtocol(inputTransport)
+
+	buf := bytes.NewBuffer(inputTransport.(*TAMQPDelivery).ReadBuffer.Bytes())
+	inputDupProtocol := p.inputProtocolFactory.GetProtocol(
+		&TAMQPDelivery{ReadBuffer: buf},
+	)
+
+	outputProtocol := p.outputProtocolFactory.GetProtocol(outputTransport)
+
+	defer func() {
+		if e := recover(); e != nil {
+			if err, ok := e.(error); p.errorLogger != nil && ok {
+				(*p.errorLogger)(err)
+			} else {
+				log.Printf("panic in processor: %s: %s", e, debug.Stack())
+			}
+		}
+	}()
+
+	if inputTransport != nil {
+		defer inputTransport.Close()
+	}
+	if outputTransport != nil {
+		defer outputTransport.Close()
+	}
+
+	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
+		_, err := processor.Process(inputProtocol, outputProtocol)
+		if err != nil {
+			if err, ok := err.(thrift.TTransportException); !ok || err.TypeId() != thrift.END_OF_FILE {
+				if p.errorLogger != nil {
+					(*p.errorLogger)(err)
+				} else {
+					log.Println("error processing request:", err)
+				}
+			}
+		}
+
+		client.(*TAMQPDelivery).Delivery.Ack(false)
+
+		return err
+	} else {
+		if _, err := processor.Process(inputProtocol, outputProtocol); err != nil {
+			if p.errorLogger != nil {
+				(*p.errorLogger)(err)
+			} else {
+				log.Println("error processing request:", err)
+			}
+
+			return err
+		}
+	}
 
 	return nil
 }

@@ -10,7 +10,7 @@ import (
 type TAMQPDelivery struct {
 	Delivery    amqp.Delivery
 	Channel     *amqp.Channel
-	readBuffer  *bytes.Buffer
+	ReadBuffer  *bytes.Buffer
 	writeBuffer *bytes.Buffer
 }
 
@@ -34,7 +34,7 @@ func (d *TAMQPDelivery) Close() error {
 }
 
 func (d *TAMQPDelivery) Read(buf []byte) (int, error) {
-	return d.readBuffer.Read(buf)
+	return d.ReadBuffer.Read(buf)
 }
 
 func (d *TAMQPDelivery) Write(buf []byte) (int, error) {
@@ -53,6 +53,8 @@ func (d *TAMQPDelivery) Flush() error {
 				Body:          d.writeBuffer.Bytes(),
 			},
 		); err != nil {
+			d.Delivery.Ack(false)
+
 			return err
 		} else {
 			return d.Delivery.Ack(false)
