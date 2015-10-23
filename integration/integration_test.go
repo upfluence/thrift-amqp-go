@@ -10,7 +10,7 @@ import (
 	"github.com/upfluence/thrift/lib/go/thrift"
 )
 
-var GlobalCounter = 0
+var releaseChan = make(chan bool)
 
 type Handler struct{}
 
@@ -18,7 +18,7 @@ func (h *Handler) Add(x, y int64) (int64, error) {
 	return x + y, nil
 }
 func (h *Handler) Yolo() error {
-	GlobalCounter++
+	releaseChan <- true
 	return nil
 }
 
@@ -52,13 +52,14 @@ func TestYolo(t *testing.T) {
 	go s.Serve()
 
 	err := NewClient().Yolo()
-	time.Sleep(1 * time.Second)
 	if err != nil {
 		t.Errorf("Error happened: %s", err.Error())
 	}
 
-	if GlobalCounter != 1 {
-		t.Errorf("Method not called: %d", GlobalCounter)
+	select {
+	case <-releaseChan:
+	case <-time.After(30 * time.Second):
+		t.Errorf("Timeout reached")
 	}
 
 	s.Stop()
