@@ -1,2 +1,6 @@
 general:
   build_dir: integration
+
+test:
+  override:
+    - go test -v ./...
