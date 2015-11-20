@@ -204,15 +204,17 @@ func (s *TAMQPServer) AcceptLoop() error {
 			return nil
 		}
 
-		go func() {
-			if err := s.processRequests(client); err != nil {
-				if s.errorLogger != nil {
-					(*s.errorLogger)(err)
-				} else {
-					log.Println("error processing request:", err)
+		if client != nil {
+			go func() {
+				if err := s.processRequests(client); err != nil {
+					if s.errorLogger != nil {
+						(*s.errorLogger)(err)
+					} else {
+						log.Println("error processing request:", err)
+					}
 				}
-			}
-		}()
+			}()
+		}
 	}
 }
 
@@ -246,15 +248,10 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 			} else {
 				log.Printf("panic in processor: %s: %s", e, debug.Stack())
 			}
+
+			client.(*TAMQPDelivery).Delivery.Ack(false)
 		}
 	}()
-
-	if inputTransport != nil {
-		defer inputTransport.Close()
-	}
-	if outputTransport != nil {
-		defer outputTransport.Close()
-	}
 
 	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
 		_, err := processor.Process(inputProtocol, outputProtocol)
