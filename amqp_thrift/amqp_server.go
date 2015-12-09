@@ -212,6 +212,8 @@ func (s *TAMQPServer) AcceptLoop() error {
 					} else {
 						log.Println("error processing request:", err)
 					}
+
+					client.(*TAMQPDelivery).Delivery.Ack(false)
 				}
 			}()
 		}
@@ -262,6 +264,8 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 				} else {
 					log.Println("error processing request:", err)
 				}
+
+				client.(*TAMQPDelivery).Delivery.Ack(false)
 			}
 		}
 
