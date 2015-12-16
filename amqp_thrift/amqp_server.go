@@ -194,17 +194,11 @@ func (p *TAMQPServer) SetErrorLogger(fn func(error)) {
 }
 
 func (s *TAMQPServer) AcceptLoop() error {
-	var client thrift.TTransport
-
 	for {
 		select {
 		case delivery := <-s.deliveries:
-			client, _ = NewTAMQPDelivery(delivery, s.channel)
-		case <-s.quit:
-			return nil
-		}
+			client, _ := NewTAMQPDelivery(delivery, s.channel)
 
-		if client != nil {
 			go func() {
 				if err := s.processRequests(client); err != nil {
 					if s.errorLogger != nil {
@@ -216,6 +210,8 @@ func (s *TAMQPServer) AcceptLoop() error {
 					client.(*TAMQPDelivery).Delivery.Ack(false)
 				}
 			}()
+		case <-s.quit:
+			return nil
 		}
 	}
 }
@@ -274,11 +270,7 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 		return err
 	} else {
 		if _, err := processor.Process(inputProtocol, outputProtocol); err != nil {
-			if p.errorLogger != nil {
-				(*p.errorLogger)(err)
-			} else {
-				log.Println("error processing request:", err)
-			}
+			log.Println("error processing request:", err)
 
 			return err
 		}
