@@ -206,8 +206,6 @@ func (s *TAMQPServer) AcceptLoop() error {
 					} else {
 						log.Println("error processing request:", err)
 					}
-
-					client.(*TAMQPDelivery).Delivery.Ack(false)
 				}
 			}()
 		case <-s.quit:
@@ -255,13 +253,7 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 		_, err := processor.Process(inputProtocol, outputProtocol)
 		if err != nil {
 			if err, ok := err.(thrift.TTransportException); !ok || err.TypeId() != thrift.END_OF_FILE {
-				if p.errorLogger != nil {
-					(*p.errorLogger)(err)
-				} else {
-					log.Println("error processing request:", err)
-				}
-
-				client.(*TAMQPDelivery).Delivery.Ack(false)
+				log.Println("error processing request:", err)
 			}
 		}
 
@@ -270,9 +262,11 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 		return err
 	} else {
 		if _, err := processor.Process(inputProtocol, outputProtocol); err != nil {
-			log.Println("error processing request:", err)
+			if err, ok := err.(thrift.TTransportException); !ok || err.TypeId() != thrift.END_OF_FILE {
+				log.Println("error processing request:", err)
 
-			return err
+				return err
+			}
 		}
 	}
 
