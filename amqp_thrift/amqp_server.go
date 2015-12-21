@@ -261,9 +261,11 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 
 		return err
 	} else {
-		if _, err := processor.Process(inputProtocol, outputProtocol); err != nil {
-			if err, ok := err.(thrift.TTransportException); !ok || err.TypeId() != thrift.END_OF_FILE {
-				log.Println("error processing request:", err)
+		if _, err1 := processor.Process(inputProtocol, outputProtocol); err1 != nil {
+			if err, ok := err1.(thrift.TTransportException); !ok || err.TypeId() != thrift.END_OF_FILE {
+				log.Println("error processing request:", err1)
+
+				client.(*TAMQPDelivery).Delivery.Ack(false)
 
 				return err
 			}
