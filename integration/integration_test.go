@@ -22,6 +22,10 @@ func (h *Handler) Yolo() error {
 	return nil
 }
 
+func (h *Handler) Ping() error {
+	return test.NewTestException()
+}
+
 func NewServer() *amqp_thrift.TAMQPServer {
 	s, _ := amqp_thrift.NewTAMQPServer(
 		test.NewFooProcessor(&Handler{}),
@@ -77,6 +81,20 @@ func TestAdd(t *testing.T) {
 
 	if r != 2 {
 		t.Errorf("Wrong result: %d", r)
+	}
+
+	s.Stop()
+}
+
+func TestPing(t *testing.T) {
+	s := NewServer()
+
+	go s.Serve()
+
+	err := NewClient().Ping()
+
+	if _, ok := err.(*test.TestException); !ok {
+		t.Errorf("Error happened: %+v", err)
 	}
 
 	s.Stop()

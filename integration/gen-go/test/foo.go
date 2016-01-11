@@ -19,6 +19,7 @@ type Foo interface {
 	//  - X
 	//  - Y
 	Add(x int64, y int64) (r int64, err error)
+	Ping() (err error)
 	Yolo() (err error)
 }
 
@@ -128,6 +129,83 @@ func (p *FooClient) recvAdd() (value int64, err error) {
 	return
 }
 
+func (p *FooClient) Ping() (err error) {
+	if err = p.sendPing(); err != nil {
+		return
+	}
+	err = p.recvPing()
+	return
+}
+
+func (p *FooClient) sendPing() (err error) {
+	oprot := p.OutputProtocol
+	if oprot == nil {
+		oprot = p.ProtocolFactory.GetProtocol(p.Transport)
+		p.OutputProtocol = oprot
+	}
+	p.SeqId++
+	if err = oprot.WriteMessageBegin("ping", thrift.CALL, p.SeqId); err != nil {
+		return
+	}
+	args := FooPingArgs{}
+	if err = args.Write(oprot); err != nil {
+		return
+	}
+	if err = oprot.WriteMessageEnd(); err != nil {
+		return
+	}
+	return oprot.Flush()
+}
+
+func (p *FooClient) recvPing() (err error) {
+	iprot := p.InputProtocol
+	if iprot == nil {
+		iprot = p.ProtocolFactory.GetProtocol(p.Transport)
+		p.InputProtocol = iprot
+	}
+	method, mTypeId, seqId, err := iprot.ReadMessageBegin()
+	if err != nil {
+		return
+	}
+	if method != "ping" {
+		err = thrift.NewTApplicationException(thrift.WRONG_METHOD_NAME, "ping failed: wrong method name")
+		return
+	}
+	if p.SeqId != seqId {
+		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "ping failed: out of sequence response")
+		return
+	}
+	if mTypeId == thrift.EXCEPTION {
+		error2 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error3 error
+		error3, err = error2.Read(iprot)
+		if err != nil {
+			return
+		}
+		if err = iprot.ReadMessageEnd(); err != nil {
+			return
+		}
+		err = error3
+		return
+	}
+	if mTypeId != thrift.REPLY {
+		err = thrift.NewTApplicationException(thrift.INVALID_MESSAGE_TYPE_EXCEPTION, "ping failed: invalid message type")
+		return
+	}
+	result := FooPingResult{}
+	if err = result.Read(iprot); err != nil {
+		return
+	}
+	if err = iprot.ReadMessageEnd(); err != nil {
+		return
+	}
+	if result.Exc != nil {
+		err = result.Exc
+		return
+	}
+	return
+}
+
 func (p *FooClient) Yolo() (err error) {
 	if err = p.sendYolo(); err != nil {
 		return
@@ -175,10 +253,11 @@ func (p *FooProcessor) ProcessorMap() map[string]thrift.TProcessorFunction {
 
 func NewFooProcessor(handler Foo) *FooProcessor {
 
-	self2 := &FooProcessor{handler: handler, processorMap: make(map[string]thrift.TProcessorFunction)}
-	self2.processorMap["add"] = &fooProcessorAdd{handler: handler}
-	self2.processorMap["yolo"] = &fooProcessorYolo{handler: handler}
-	return self2
+	self4 := &FooProcessor{handler: handler, processorMap: make(map[string]thrift.TProcessorFunction)}
+	self4.processorMap["add"] = &fooProcessorAdd{handler: handler}
+	self4.processorMap["ping"] = &fooProcessorPing{handler: handler}
+	self4.processorMap["yolo"] = &fooProcessorYolo{handler: handler}
+	return self4
 }
 
 func (p *FooProcessor) Process(iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
@@ -191,12 +270,12 @@ func (p *FooProcessor) Process(iprot, oprot thrift.TProtocol) (success bool, err
 	}
 	iprot.Skip(thrift.STRUCT)
 	iprot.ReadMessageEnd()
-	x3 := thrift.NewTApplicationException(thrift.UNKNOWN_METHOD, "Unknown function "+name)
+	x5 := thrift.NewTApplicationException(thrift.UNKNOWN_METHOD, "Unknown function "+name)
 	oprot.WriteMessageBegin(name, thrift.EXCEPTION, seqId)
-	x3.Write(oprot)
+	x5.Write(oprot)
 	oprot.WriteMessageEnd()
 	oprot.Flush()
-	return false, x3
+	return false, x5
 
 }
 
@@ -231,6 +310,56 @@ func (p *fooProcessorAdd) Process(seqId int32, iprot, oprot thrift.TProtocol) (s
 		result.Success = &retval
 	}
 	if err2 = oprot.WriteMessageBegin("add", thrift.REPLY, seqId); err2 != nil {
+		err = err2
+	}
+	if err2 = result.Write(oprot); err == nil && err2 != nil {
+		err = err2
+	}
+	if err2 = oprot.WriteMessageEnd(); err == nil && err2 != nil {
+		err = err2
+	}
+	if err2 = oprot.Flush(); err == nil && err2 != nil {
+		err = err2
+	}
+	if err != nil {
+		return
+	}
+	return true, err
+}
+
+type fooProcessorPing struct {
+	handler Foo
+}
+
+func (p *fooProcessorPing) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	args := FooPingArgs{}
+	if err = args.Read(iprot); err != nil {
+		iprot.ReadMessageEnd()
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
+		oprot.WriteMessageBegin("ping", thrift.EXCEPTION, seqId)
+		x.Write(oprot)
+		oprot.WriteMessageEnd()
+		oprot.Flush()
+		return false, err
+	}
+
+	iprot.ReadMessageEnd()
+	result := FooPingResult{}
+	var err2 error
+	if err2 = p.handler.Ping(); err2 != nil {
+		switch v := err2.(type) {
+		case *TestException:
+			result.Exc = v
+		default:
+			x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing ping: "+err2.Error())
+			oprot.WriteMessageBegin("ping", thrift.EXCEPTION, seqId)
+			x.Write(oprot)
+			oprot.WriteMessageEnd()
+			oprot.Flush()
+			return true, err2
+		}
+	}
+	if err2 = oprot.WriteMessageBegin("ping", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
 	if err2 = result.Write(oprot); err == nil && err2 != nil {
@@ -495,6 +624,160 @@ func (p *FooAddResult) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("FooAddResult(%+v)", *p)
+}
+
+type FooPingArgs struct {
+}
+
+func NewFooPingArgs() *FooPingArgs {
+	return &FooPingArgs{}
+}
+
+func (p *FooPingArgs) Read(iprot thrift.TProtocol) error {
+	if _, err := iprot.ReadStructBegin(); err != nil {
+		return thrift.PrependError(fmt.Sprintf("%T read error: ", p), err)
+	}
+
+	for {
+		_, fieldTypeId, fieldId, err := iprot.ReadFieldBegin()
+		if err != nil {
+			return thrift.PrependError(fmt.Sprintf("%T field %d read error: ", p, fieldId), err)
+		}
+		if fieldTypeId == thrift.STOP {
+			break
+		}
+		if err := iprot.Skip(fieldTypeId); err != nil {
+			return err
+		}
+		if err := iprot.ReadFieldEnd(); err != nil {
+			return err
+		}
+	}
+	if err := iprot.ReadStructEnd(); err != nil {
+		return thrift.PrependError(fmt.Sprintf("%T read struct end error: ", p), err)
+	}
+	return nil
+}
+
+func (p *FooPingArgs) Write(oprot thrift.TProtocol) error {
+	if err := oprot.WriteStructBegin("ping_args"); err != nil {
+		return thrift.PrependError(fmt.Sprintf("%T write struct begin error: ", p), err)
+	}
+	if err := oprot.WriteFieldStop(); err != nil {
+		return thrift.PrependError("write field stop error: ", err)
+	}
+	if err := oprot.WriteStructEnd(); err != nil {
+		return thrift.PrependError("write struct stop error: ", err)
+	}
+	return nil
+}
+
+func (p *FooPingArgs) String() string {
+	if p == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("FooPingArgs(%+v)", *p)
+}
+
+// Attributes:
+//  - Exc
+type FooPingResult struct {
+	Exc *TestException `thrift:"exc,1" json:"exc,omitempty"`
+}
+
+func NewFooPingResult() *FooPingResult {
+	return &FooPingResult{}
+}
+
+var FooPingResult_Exc_DEFAULT *TestException
+
+func (p *FooPingResult) GetExc() *TestException {
+	if !p.IsSetExc() {
+		return FooPingResult_Exc_DEFAULT
+	}
+	return p.Exc
+}
+func (p *FooPingResult) IsSetExc() bool {
+	return p.Exc != nil
+}
+
+func (p *FooPingResult) Read(iprot thrift.TProtocol) error {
+	if _, err := iprot.ReadStructBegin(); err != nil {
+		return thrift.PrependError(fmt.Sprintf("%T read error: ", p), err)
+	}
+
+	for {
+		_, fieldTypeId, fieldId, err := iprot.ReadFieldBegin()
+		if err != nil {
+			return thrift.PrependError(fmt.Sprintf("%T field %d read error: ", p, fieldId), err)
+		}
+		if fieldTypeId == thrift.STOP {
+			break
+		}
+		switch fieldId {
+		case 1:
+			if err := p.ReadField1(iprot); err != nil {
+				return err
+			}
+		default:
+			if err := iprot.Skip(fieldTypeId); err != nil {
+				return err
+			}
+		}
+		if err := iprot.ReadFieldEnd(); err != nil {
+			return err
+		}
+	}
+	if err := iprot.ReadStructEnd(); err != nil {
+		return thrift.PrependError(fmt.Sprintf("%T read struct end error: ", p), err)
+	}
+	return nil
+}
+
+func (p *FooPingResult) ReadField1(iprot thrift.TProtocol) error {
+	p.Exc = NewTestException()
+	if err := p.Exc.Read(iprot); err != nil {
+		return thrift.PrependError(fmt.Sprintf("%T error reading struct: ", p.Exc), err)
+	}
+	return nil
+}
+
+func (p *FooPingResult) Write(oprot thrift.TProtocol) error {
+	if err := oprot.WriteStructBegin("ping_result"); err != nil {
+		return thrift.PrependError(fmt.Sprintf("%T write struct begin error: ", p), err)
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := oprot.WriteFieldStop(); err != nil {
+		return thrift.PrependError("write field stop error: ", err)
+	}
+	if err := oprot.WriteStructEnd(); err != nil {
+		return thrift.PrependError("write struct stop error: ", err)
+	}
+	return nil
+}
+
+func (p *FooPingResult) writeField1(oprot thrift.TProtocol) (err error) {
+	if p.IsSetExc() {
+		if err := oprot.WriteFieldBegin("exc", thrift.STRUCT, 1); err != nil {
+			return thrift.PrependError(fmt.Sprintf("%T write field begin error 1:exc: ", p), err)
+		}
+		if err := p.Exc.Write(oprot); err != nil {
+			return thrift.PrependError(fmt.Sprintf("%T error writing struct: ", p.Exc), err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return thrift.PrependError(fmt.Sprintf("%T write field end error 1:exc: ", p), err)
+		}
+	}
+	return err
+}
+
+func (p *FooPingResult) String() string {
+	if p == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("FooPingResult(%+v)", *p)
 }
 
 type FooYoloArgs struct {
