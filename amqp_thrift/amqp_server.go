@@ -254,12 +254,12 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 
 	_, err := processor.Process(inputProtocol, outputProtocol)
 
-	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY || err != nil {
+	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
 		client.(*TAMQPDelivery).Delivery.Ack(false)
 	}
 
 	if err != nil {
-		if errThrift, ok := err.(thrift.TTransportException); !ok || errThrift.TypeId() != thrift.END_OF_FILE {
+		if errThrift, ok := err.(thrift.TTransportException); ok && errThrift.TypeId() != thrift.END_OF_FILE {
 			log.Println("error processing request:", err)
 			return err
 		}
