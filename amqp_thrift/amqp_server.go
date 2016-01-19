@@ -196,7 +196,11 @@ func (p *TAMQPServer) SetErrorLogger(fn func(error)) {
 func (s *TAMQPServer) AcceptLoop() error {
 	for {
 		select {
-		case delivery := <-s.deliveries:
+		case delivery, ok := <-s.deliveries:
+			if !ok {
+				return errors.New("Channel closed")
+			}
+
 			client, _ := NewTAMQPDelivery(delivery, s.channel)
 
 			go func() {
@@ -215,12 +219,11 @@ func (s *TAMQPServer) AcceptLoop() error {
 }
 
 func (p *TAMQPServer) Serve() error {
-	err := p.Listen()
-	if err != nil {
+	if err := p.Listen(); err != nil {
 		return err
 	}
-	p.AcceptLoop()
-	return nil
+
+	return p.AcceptLoop()
 }
 
 func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
