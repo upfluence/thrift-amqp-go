@@ -22,6 +22,18 @@ type TAMQPClient struct {
 	deliveries     <-chan amqp.Delivery
 }
 
+func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchangeName, routingKey string) (thrift.TTransport, error) {
+	buf := make([]byte, 0, 1024)
+
+	return &TAMQPClient{
+		Connection:    conn,
+		Channel:       channel,
+		ExchangeName:  exchangeName,
+		RoutingKey:    routingKey,
+		requestBuffer: bytes.NewBuffer(buf),
+	}, nil
+}
+
 func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport, error) {
 	buf := make([]byte, 0, 1024)
 
