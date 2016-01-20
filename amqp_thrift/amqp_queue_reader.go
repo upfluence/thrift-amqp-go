@@ -7,18 +7,20 @@ import (
 )
 
 type AMQPQueueReader struct {
-	Channel   *amqp.Channel
-	QueueName string
-	exitChan  chan bool
-	newData   chan bool
-	buffer    *bytes.Buffer
-	mutex     *sync.Mutex
+	Channel     *amqp.Channel
+	QueueName   string
+	consumerTag string
+	exitChan    chan bool
+	newData     chan bool
+	buffer      *bytes.Buffer
+	mutex       *sync.Mutex
 }
 
-func NewAMQPQueueReader(channel *amqp.Channel, queueName string, exitChan chan bool) (*AMQPQueueReader, error) {
+func NewAMQPQueueReader(channel *amqp.Channel, queueName string, consumerTag string, exitChan chan bool) (*AMQPQueueReader, error) {
 	return &AMQPQueueReader{
 		channel,
 		queueName,
+		consumerTag,
 		exitChan,
 		make(chan bool),
 		bytes.NewBuffer(make([]byte, 0, 1024)),
@@ -28,13 +30,13 @@ func NewAMQPQueueReader(channel *amqp.Channel, queueName string, exitChan chan b
 
 func (r *AMQPQueueReader) Consume() error {
 	deliveries, err := r.Channel.Consume(
-		r.QueueName, // name
-		"",          // consumerTag,
-		true,        // noAck
-		false,       // exclusive
-		false,       //            noLocal
-		false,       // noWait
-		nil,         // arguments
+		r.QueueName,   // name
+		r.consumerTag, // consumerTag,
+		true,          // noAck
+		false,         // exclusive
+		false,         //            noLocal
+		false,         // noWait
+		nil,           // arguments
 	)
 
 	if err != nil {

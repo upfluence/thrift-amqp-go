@@ -4,26 +4,31 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"math/rand"
+	"os"
+
 	"github.com/streadway/amqp"
 	"github.com/upfluence/thrift/lib/go/thrift"
-	"io"
-	"os"
 )
 
 type TAMQPClient struct {
-	URI            string
-	Connection     *amqp.Connection
-	Channel        *amqp.Channel
-	QueueName      string
-	ExchangeName   string
-	RoutingKey     string
-	requestBuffer  *bytes.Buffer
-	responseReader io.Reader
-	deliveries     <-chan amqp.Delivery
+	URI                   string
+	Connection            *amqp.Connection
+	Channel               *amqp.Channel
+	QueueName             string
+	ExchangeName          string
+	RoutingKey            string
+	consumerTag           string
+	requestBuffer         *bytes.Buffer
+	responseReader        io.Reader
+	stopConnectionOnClose bool
+	deliveries            <-chan amqp.Delivery
 }
 
-func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchangeName, routingKey string) (thrift.TTransport, error) {
+func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchangeName, routingKey string, consumerTag string) (thrift.TTransport, error) {
 	buf := make([]byte, 0, 1024)
+	cTag := fmt.Sprintf("%s-%d", consumerTag, rand.Uint32())
 
 	return &TAMQPClient{
 		Connection:    conn,
@@ -31,6 +36,7 @@ func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchan
 		ExchangeName:  exchangeName,
 		RoutingKey:    routingKey,
 		requestBuffer: bytes.NewBuffer(buf),
+		consumerTag:   cTag,
 	}, nil
 }
 
@@ -38,10 +44,11 @@ func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport
 	buf := make([]byte, 0, 1024)
 
 	return &TAMQPClient{
-		URI:           amqpURI,
-		requestBuffer: bytes.NewBuffer(buf),
-		ExchangeName:  exchangeName,
-		RoutingKey:    routingKey,
+		URI:                   amqpURI,
+		requestBuffer:         bytes.NewBuffer(buf),
+		ExchangeName:          exchangeName,
+		RoutingKey:            routingKey,
+		stopConnectionOnClose: true,
 	}, nil
 }
 
@@ -75,7 +82,12 @@ func (c *TAMQPClient) Open() error {
 
 	c.QueueName = queue.Name
 
-	r, err := NewAMQPQueueReader(c.Channel, c.QueueName, make(chan bool))
+	r, err := NewAMQPQueueReader(
+		c.Channel,
+		c.QueueName,
+		c.consumerTag,
+		make(chan bool),
+	)
 
 	if err != nil {
 		return err
@@ -93,16 +105,22 @@ func (c *TAMQPClient) IsOpen() bool {
 }
 
 func (c *TAMQPClient) Close() error {
-	if c.Connection == nil {
-		return errors.New("The connection is not opened")
+	if c.consumerTag != "" {
+		c.Channel.Cancel(c.consumerTag, true)
 	}
 
-	defer func() {
-		c.Channel = nil
-		c.Connection = nil
-	}()
+	if c.stopConnectionOnClose {
+		if c.Connection == nil {
+			return errors.New("The connection is not opened")
+		}
 
-	c.Connection.Close()
+		defer func() {
+			c.Channel = nil
+			c.Connection = nil
+		}()
+
+		c.Connection.Close()
+	}
 
 	return nil
 }
