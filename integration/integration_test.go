@@ -13,10 +13,27 @@ import (
 var releaseChan = make(chan bool)
 
 type Handler struct{}
+type HandlerBis struct{}
+
+func (h *HandlerBis) Add(x, y int64) (int64, error) {
+	time.Sleep(1 * time.Second)
+	return x + y, nil
+}
+func (h *HandlerBis) Yolo() error {
+	time.Sleep(1 * time.Second)
+	releaseChan <- true
+	return nil
+}
+
+func (h *HandlerBis) Ping() error {
+	time.Sleep(1 * time.Second)
+	return test.NewTestException()
+}
 
 func (h *Handler) Add(x, y int64) (int64, error) {
 	return x + y, nil
 }
+
 func (h *Handler) Yolo() error {
 	releaseChan <- true
 	return nil
@@ -26,20 +43,20 @@ func (h *Handler) Ping() error {
 	return test.NewTestException()
 }
 
-func NewServer() *amqp_thrift.TAMQPServer {
+func NewServer(handler test.Foo, options amqp_thrift.ServerOptions) *amqp_thrift.TAMQPServer {
 	s, _ := amqp_thrift.NewTAMQPServer(
-		test.NewFooProcessor(&Handler{}),
+		test.NewFooProcessor(handler),
 		thrift.NewTJSONProtocolFactory(),
-		amqp_thrift.ServerOptions{},
+		options,
 	)
 
 	return s
 }
 
-func NewClient() *test.FooClient {
+func NewClient(exchangeName string) *test.FooClient {
 	t, _ := amqp_thrift.NewTAMQPClient(
 		amqp_thrift.DefaultAMQPURI,
-		amqp_thrift.DefaultExchangeName,
+		exchangeName,
 		amqp_thrift.DefaultRoutingKey,
 	)
 
@@ -51,11 +68,11 @@ func NewClient() *test.FooClient {
 func TestYolo(t *testing.T) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	s := NewServer()
+	s := NewServer(&Handler{}, amqp_thrift.ServerOptions{ExchangeName: "t1", QueueName: "t1"})
 
 	go s.Serve()
 
-	err := NewClient().Yolo()
+	err := NewClient("t1").Yolo()
 	if err != nil {
 		t.Errorf("Error happened: %s", err.Error())
 	}
@@ -70,11 +87,28 @@ func TestYolo(t *testing.T) {
 }
 
 func TestAdd(t *testing.T) {
-	s := NewServer()
+	s := NewServer(&Handler{}, amqp_thrift.ServerOptions{ExchangeName: "t2", QueueName: "t2"})
 
 	go s.Serve()
 
-	r, err := NewClient().Add(int64(1), int64(1))
+	r, err := NewClient("t2").Add(int64(1), int64(1))
+	if err != nil {
+		t.Errorf("Error happened: %s", err.Error())
+	}
+
+	if r != 2 {
+		t.Errorf("Wrong result: %d", r)
+	}
+
+	s.Stop()
+}
+
+func TestAddTimeout(t *testing.T) {
+	s := NewServer(&HandlerBis{}, amqp_thrift.ServerOptions{ExchangeName: "t3", QueueName: "t3", Timeout: 40 * time.Millisecond})
+
+	go s.Serve()
+
+	r, err := NewClient("t3").Add(int64(1), int64(1))
 	if err != nil {
 		t.Errorf("Error happened: %s", err.Error())
 	}
@@ -87,11 +121,11 @@ func TestAdd(t *testing.T) {
 }
 
 func TestPing(t *testing.T) {
-	s := NewServer()
+	s := NewServer(&Handler{}, amqp_thrift.ServerOptions{ExchangeName: "t4", QueueName: "t4"})
 
 	go s.Serve()
 
-	err := NewClient().Ping()
+	err := NewClient("t4").Ping()
 
 	if _, ok := err.(*test.TestException); !ok {
 		t.Errorf("Error happened: %+v", err)

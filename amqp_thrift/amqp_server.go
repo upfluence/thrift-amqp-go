@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"runtime/debug"
+	"time"
 
 	"github.com/streadway/amqp"
 	"github.com/upfluence/thrift/lib/go/thrift"
@@ -40,6 +41,7 @@ type ServerOptions struct {
 	RoutingKey   string
 	QueueName    string
 	ConsumerTag  string
+	Timeout      time.Duration
 }
 
 func NewTAMQPServer(
@@ -252,18 +254,32 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 		}
 	}()
 
-	_, err := processor.Process(inputProtocol, outputProtocol)
+	resultChan := make(chan error)
 
-	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
-		client.(*TAMQPDelivery).Delivery.Ack(false)
-	}
+	go func() {
+		_, err := processor.Process(inputProtocol, outputProtocol)
 
-	if err != nil {
-		if errThrift, ok := err.(thrift.TTransportException); ok && errThrift.TypeId() != thrift.END_OF_FILE {
-			log.Println("error processing request:", err)
-			return err
+		if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
+			client.(*TAMQPDelivery).Delivery.Ack(false)
 		}
+
+		if err != nil {
+			if errThrift, ok := err.(thrift.TTransportException); ok && errThrift.TypeId() != thrift.END_OF_FILE {
+				log.Println("error processing request:", err)
+				resultChan <- err
+				return
+			}
+		}
+		resultChan <- nil
+	}()
+
+	if p.options.Timeout != 0 {
+		go func() {
+			time.Sleep(p.options.Timeout)
+
+			resultChan <- errors.New("Timeout reached")
+		}()
 	}
 
-	return nil
+	return <-resultChan
 }
