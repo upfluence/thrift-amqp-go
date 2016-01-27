@@ -79,7 +79,7 @@ func TestYolo(t *testing.T) {
 
 	select {
 	case <-releaseChan:
-	case <-time.After(30 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Errorf("Timeout reached")
 	}
 

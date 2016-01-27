@@ -3,6 +3,7 @@ package amqp_thrift
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log"
 	"runtime/debug"
 	"time"
@@ -195,6 +196,13 @@ func (p *TAMQPServer) SetErrorLogger(fn func(error)) {
 	p.errorLogger = &fn
 }
 
+func (s *TAMQPServer) reportError(err error) {
+	if s.errorLogger != nil {
+		(*s.errorLogger)(err)
+	} else {
+		log.Println("error processing request:", err)
+	}
+}
 func (s *TAMQPServer) AcceptLoop() error {
 	for {
 		select {
@@ -203,17 +211,19 @@ func (s *TAMQPServer) AcceptLoop() error {
 				return errors.New("Channel closed")
 			}
 
-			client, _ := NewTAMQPDelivery(delivery, s.channel)
+			if len(delivery.Body) == 0 {
+				delivery.Ack(false)
 
-			go func() {
-				if err := s.processRequests(client); err != nil {
-					if s.errorLogger != nil {
-						(*s.errorLogger)(err)
-					} else {
-						log.Println("error processing request:", err)
+				s.reportError(errors.New("Message empty"))
+			} else {
+				client, _ := NewTAMQPDelivery(delivery, s.channel)
+
+				go func() {
+					if err := s.processRequests(client); err != nil {
+						s.reportError(err)
 					}
-				}
-			}()
+				}()
+			}
 		case <-s.quit:
 			return nil
 		}
@@ -244,12 +254,9 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 
 	defer func() {
 		if e := recover(); e != nil {
-			if err, ok := e.(error); p.errorLogger != nil && ok {
-				(*p.errorLogger)(err)
-			} else {
-				log.Printf("panic in processor: %s: %s", e, debug.Stack())
-			}
-
+			p.reportError(
+				errors.New(fmt.Sprintf("panic in processor: %s: %s", e, debug.Stack())),
+			)
 			client.(*TAMQPDelivery).Delivery.Ack(false)
 		}
 	}()
