@@ -24,6 +24,7 @@ type TAMQPClient struct {
 	responseReader        io.Reader
 	stopConnectionOnClose bool
 	deliveries            <-chan amqp.Delivery
+	exitChan              chan bool
 }
 
 func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchangeName, routingKey string, consumerTag string) (thrift.TTransport, error) {
@@ -37,6 +38,7 @@ func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchan
 		RoutingKey:    routingKey,
 		requestBuffer: bytes.NewBuffer(buf),
 		consumerTag:   cTag,
+		exitChan:      make(chan bool, 1),
 	}, nil
 }
 
@@ -49,6 +51,7 @@ func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport
 		ExchangeName:          exchangeName,
 		RoutingKey:            routingKey,
 		stopConnectionOnClose: true,
+		exitChan:              make(chan bool, 1),
 	}, nil
 }
 
@@ -86,7 +89,7 @@ func (c *TAMQPClient) Open() error {
 		c.Channel,
 		c.QueueName,
 		c.consumerTag,
-		make(chan bool),
+		c.exitChan,
 	)
 
 	if err != nil {
@@ -122,6 +125,7 @@ func (c *TAMQPClient) Close() error {
 		c.Connection.Close()
 	}
 
+	c.exitChan <- true
 	return nil
 }
 
