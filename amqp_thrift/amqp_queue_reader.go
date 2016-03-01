@@ -15,6 +15,7 @@ type AMQPQueueReader struct {
 	isClosing   chan bool
 	buffer      *bytes.Buffer
 	mutex       *sync.Mutex
+	deliveries  <-chan amqp.Delivery
 }
 
 func NewAMQPQueueReader(channel *amqp.Channel, queueName string, consumerTag string, exitChan chan bool) (*AMQPQueueReader, error) {
@@ -27,11 +28,14 @@ func NewAMQPQueueReader(channel *amqp.Channel, queueName string, consumerTag str
 		make(chan bool, 1),
 		bytes.NewBuffer(make([]byte, 0, 1024)),
 		&sync.Mutex{},
+		nil,
 	}, nil
 }
 
-func (r *AMQPQueueReader) Consume() error {
-	deliveries, err := r.Channel.Consume(
+func (r *AMQPQueueReader) Open() error {
+	var err error
+
+	r.deliveries, err = r.Channel.Consume(
 		r.QueueName,   // name
 		r.consumerTag, // consumerTag,
 		true,          // noAck
@@ -41,15 +45,15 @@ func (r *AMQPQueueReader) Consume() error {
 		nil,           // arguments
 	)
 
-	if err != nil {
-		return err
-	}
+	return err
+}
 
+func (r *AMQPQueueReader) Consume() {
 	for {
 		select {
-		case delivery, ok := <-deliveries:
+		case delivery, ok := <-r.deliveries:
 			if !ok {
-				return nil
+				return
 			}
 
 			shouldNotify := false
@@ -64,11 +68,11 @@ func (r *AMQPQueueReader) Consume() error {
 				r.newData <- shouldNotify
 			}
 		case <-r.exitChan:
-			break
+			return
 		}
 	}
 
-	return nil
+	return
 }
 
 func (r *AMQPQueueReader) Read(b []byte) (int, error) {

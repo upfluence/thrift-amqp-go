@@ -98,6 +98,10 @@ func (c *TAMQPClient) Open() error {
 
 	c.responseReader = r
 
+	if err := r.Open(); err != nil {
+		return err
+	}
+
 	go r.Consume()
 
 	return nil
