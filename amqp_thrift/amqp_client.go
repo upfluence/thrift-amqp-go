@@ -70,20 +70,22 @@ func (c *TAMQPClient) Open() error {
 		}
 	}
 
-	queue, err := c.Channel.QueueDeclare(
-		"",    // name of the queue
-		true,  // durable
-		true,  // delete when usused
-		true,  // exclusive
-		false, // noWait
-		nil,   // arguments
-	)
+	if c.QueueName == "" {
+		queue, err := c.Channel.QueueDeclare(
+			"",    // name of the queue
+			true,  // durable
+			true,  // delete when usused
+			true,  // exclusive
+			false, // noWait
+			nil,   // arguments
+		)
 
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
+
+		c.QueueName = queue.Name
 	}
-
-	c.QueueName = queue.Name
 
 	r, err := NewAMQPQueueReader(
 		c.Channel,
