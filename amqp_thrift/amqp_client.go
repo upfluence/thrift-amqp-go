@@ -27,7 +27,14 @@ type TAMQPClient struct {
 	exitChan              chan bool
 }
 
-func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchangeName, routingKey string, consumerTag string) (thrift.TTransport, error) {
+func NewTAMQPClientFromConnAndQueue(
+	conn *amqp.Connection,
+	channel *amqp.Channel,
+	exchangeName,
+	routingKey string,
+	consumerTag string,
+	queueName string,
+) (thrift.TTransport, error) {
 	buf := make([]byte, 0, 1024)
 	cTag := fmt.Sprintf("%s-%d", consumerTag, rand.Uint32())
 
@@ -39,7 +46,25 @@ func NewTAMQPClientFromConn(conn *amqp.Connection, channel *amqp.Channel, exchan
 		requestBuffer: bytes.NewBuffer(buf),
 		consumerTag:   cTag,
 		exitChan:      make(chan bool, 1),
+		QueueName:     queueName,
 	}, nil
+}
+
+func NewTAMQPClientFromConn(
+	conn *amqp.Connection,
+	channel *amqp.Channel,
+	exchangeName,
+	routingKey string,
+	consumerTag string,
+) (thrift.TTransport, error) {
+	return NewTAMQPClientFromConnAndQueue(
+		conn,
+		channel,
+		exchangeName,
+		routingKey,
+		consumerTag,
+		"",
+	)
 }
 
 func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport, error) {
