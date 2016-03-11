@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"time"
 
 	"github.com/streadway/amqp"
 	"github.com/upfluence/thrift/lib/go/thrift"
@@ -82,16 +83,33 @@ func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport
 
 func (c *TAMQPClient) Open() error {
 	var err error
+	errChan := make(chan error)
+
+	go c.open(errChan)
+
+	select {
+	case err = <-errChan:
+	case <-time.After(5 * time.Second):
+		err = errors.New("Open Timeout")
+	}
+
+	return err
+}
+
+func (c *TAMQPClient) open(errChan chan error) {
+	var err error
 
 	if c.Connection == nil {
 		if c.Connection, err = amqp.Dial(c.URI); err != nil {
-			return err
+			errChan <- err
+			return
 		}
 	}
 
 	if c.Channel == nil {
 		if c.Channel, err = c.Connection.Channel(); err != nil {
-			return err
+			errChan <- err
+			return
 		}
 	}
 
@@ -106,7 +124,8 @@ func (c *TAMQPClient) Open() error {
 		)
 
 		if err != nil {
-			return err
+			errChan <- err
+			return
 		}
 
 		c.QueueName = queue.Name
@@ -120,18 +139,21 @@ func (c *TAMQPClient) Open() error {
 	)
 
 	if err != nil {
-		return err
+		errChan <- err
+		return
 	}
 
 	c.responseReader = r
 
 	if err := r.Open(); err != nil {
-		return err
+		errChan <- err
+		return
 	}
 
 	go r.Consume()
 
-	return nil
+	errChan <- err
+	return
 }
 
 func (c *TAMQPClient) IsOpen() bool {
