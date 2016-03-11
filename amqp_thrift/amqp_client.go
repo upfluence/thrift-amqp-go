@@ -13,6 +13,8 @@ import (
 	"github.com/upfluence/thrift/lib/go/thrift"
 )
 
+var OpenTimeoutError = errors.New("Open timeout errror")
+
 type TAMQPClient struct {
 	URI                   string
 	Connection            *amqp.Connection
@@ -96,31 +98,33 @@ func (c *TAMQPClient) Open() error {
 	var err error
 	errChan := make(chan error)
 
-	go c.open(errChan)
+	go func() { errChan <- c.open() }()
 
-	select {
-	case err = <-errChan:
-	case <-time.After(c.openTimeout):
-		err = errors.New("Open Timeout")
+	if c.openTimeout > 0 {
+		select {
+		case err = <-errChan:
+		case <-time.After(c.openTimeout):
+			err = OpenTimeoutError
+		}
+	} else {
+		err = <-errChan
 	}
 
 	return err
 }
 
-func (c *TAMQPClient) open(errChan chan error) {
+func (c *TAMQPClient) open() error {
 	var err error
 
 	if c.Connection == nil {
 		if c.Connection, err = amqp.Dial(c.URI); err != nil {
-			errChan <- err
-			return
+			return err
 		}
 	}
 
 	if c.Channel == nil {
 		if c.Channel, err = c.Connection.Channel(); err != nil {
-			errChan <- err
-			return
+			return err
 		}
 	}
 
@@ -135,8 +139,7 @@ func (c *TAMQPClient) open(errChan chan error) {
 		)
 
 		if err != nil {
-			errChan <- err
-			return
+			return err
 		}
 
 		c.QueueName = queue.Name
@@ -150,21 +153,18 @@ func (c *TAMQPClient) open(errChan chan error) {
 	)
 
 	if err != nil {
-		errChan <- err
-		return
+		return err
 	}
 
 	c.responseReader = r
 
 	if err := r.Open(); err != nil {
-		errChan <- err
-		return
+		return err
 	}
 
 	go r.Consume()
 
-	errChan <- err
-	return
+	return err
 }
 
 func (c *TAMQPClient) IsOpen() bool {
