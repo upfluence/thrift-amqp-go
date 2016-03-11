@@ -138,6 +138,25 @@ func TestAdd(t *testing.T) {
 	s.Stop()
 }
 
+func TestOpenTimeout(t *testing.T) {
+	c, err := amqp_thrift.NewTAMQPClient(
+		amqp_thrift.DefaultAMQPURI,
+		"zozo",
+		amqp_thrift.DefaultRoutingKey,
+		1*time.Microsecond,
+	)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = c.Open()
+
+	if err == nil {
+		t.Errorf("Supposed to timeout")
+	}
+}
+
 func TestAddTimeout(t *testing.T) {
 	s, err := NewServer(&HandlerBis{}, amqp_thrift.ServerOptions{ExchangeName: "t3", QueueName: "t3", Timeout: 40 * time.Millisecond})
 
