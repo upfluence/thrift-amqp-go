@@ -7,10 +7,13 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"time"
 
 	"github.com/streadway/amqp"
 	"github.com/upfluence/thrift/lib/go/thrift"
 )
+
+var OpenTimeoutError = errors.New("Open timeout errror")
 
 type TAMQPClient struct {
 	URI                   string
@@ -25,6 +28,7 @@ type TAMQPClient struct {
 	stopConnectionOnClose bool
 	deliveries            <-chan amqp.Delivery
 	exitChan              chan bool
+	openTimeout           time.Duration
 }
 
 func NewTAMQPClientFromConnAndQueue(
@@ -34,6 +38,7 @@ func NewTAMQPClientFromConnAndQueue(
 	routingKey string,
 	consumerTag string,
 	queueName string,
+	openTimeout time.Duration,
 ) (thrift.TTransport, error) {
 	buf := make([]byte, 0, 1024)
 	cTag := fmt.Sprintf("%s-%d", consumerTag, rand.Uint32())
@@ -47,6 +52,7 @@ func NewTAMQPClientFromConnAndQueue(
 		consumerTag:   cTag,
 		exitChan:      make(chan bool, 1),
 		QueueName:     queueName,
+		openTimeout:   openTimeout,
 	}, nil
 }
 
@@ -56,6 +62,7 @@ func NewTAMQPClientFromConn(
 	exchangeName,
 	routingKey string,
 	consumerTag string,
+	openTimeout time.Duration,
 ) (thrift.TTransport, error) {
 	return NewTAMQPClientFromConnAndQueue(
 		conn,
@@ -64,10 +71,16 @@ func NewTAMQPClientFromConn(
 		routingKey,
 		consumerTag,
 		"",
+		openTimeout,
 	)
 }
 
-func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport, error) {
+func NewTAMQPClient(
+	amqpURI,
+	exchangeName,
+	routingKey string,
+	openTimeout time.Duration,
+) (thrift.TTransport, error) {
 	buf := make([]byte, 0, 1024)
 
 	return &TAMQPClient{
@@ -77,10 +90,30 @@ func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport
 		RoutingKey:            routingKey,
 		stopConnectionOnClose: true,
 		exitChan:              make(chan bool, 1),
+		openTimeout:           openTimeout,
 	}, nil
 }
 
 func (c *TAMQPClient) Open() error {
+	var err error
+	errChan := make(chan error)
+
+	go func() { errChan <- c.open() }()
+
+	if c.openTimeout > 0 {
+		select {
+		case err = <-errChan:
+		case <-time.After(c.openTimeout):
+			err = OpenTimeoutError
+		}
+	} else {
+		err = <-errChan
+	}
+
+	return err
+}
+
+func (c *TAMQPClient) open() error {
 	var err error
 
 	if c.Connection == nil {
@@ -131,7 +164,7 @@ func (c *TAMQPClient) Open() error {
 
 	go r.Consume()
 
-	return nil
+	return err
 }
 
 func (c *TAMQPClient) IsOpen() bool {
