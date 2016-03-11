@@ -58,6 +58,7 @@ func NewClient(exchangeName string) *test.FooClient {
 		amqp_thrift.DefaultAMQPURI,
 		exchangeName,
 		amqp_thrift.DefaultRoutingKey,
+		5*time.Second,
 	)
 
 	t.Open()
