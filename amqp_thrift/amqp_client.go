@@ -26,6 +26,7 @@ type TAMQPClient struct {
 	stopConnectionOnClose bool
 	deliveries            <-chan amqp.Delivery
 	exitChan              chan bool
+	openTimeout           time.Duration
 }
 
 func NewTAMQPClientFromConnAndQueue(
@@ -35,6 +36,7 @@ func NewTAMQPClientFromConnAndQueue(
 	routingKey string,
 	consumerTag string,
 	queueName string,
+	openTimeout time.Duration,
 ) (thrift.TTransport, error) {
 	buf := make([]byte, 0, 1024)
 	cTag := fmt.Sprintf("%s-%d", consumerTag, rand.Uint32())
@@ -48,6 +50,7 @@ func NewTAMQPClientFromConnAndQueue(
 		consumerTag:   cTag,
 		exitChan:      make(chan bool, 1),
 		QueueName:     queueName,
+		openTimeout:   openTimeout,
 	}, nil
 }
 
@@ -57,6 +60,7 @@ func NewTAMQPClientFromConn(
 	exchangeName,
 	routingKey string,
 	consumerTag string,
+	openTimeout time.Duration,
 ) (thrift.TTransport, error) {
 	return NewTAMQPClientFromConnAndQueue(
 		conn,
@@ -65,10 +69,16 @@ func NewTAMQPClientFromConn(
 		routingKey,
 		consumerTag,
 		"",
+		openTimeout,
 	)
 }
 
-func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport, error) {
+func NewTAMQPClient(
+	amqpURI,
+	exchangeName,
+	routingKey string,
+	openTimeout time.Duration,
+) (thrift.TTransport, error) {
 	buf := make([]byte, 0, 1024)
 
 	return &TAMQPClient{
@@ -78,6 +88,7 @@ func NewTAMQPClient(amqpURI, exchangeName, routingKey string) (thrift.TTransport
 		RoutingKey:            routingKey,
 		stopConnectionOnClose: true,
 		exitChan:              make(chan bool, 1),
+		openTimeout:           openTimeout,
 	}, nil
 }
 
@@ -89,7 +100,7 @@ func (c *TAMQPClient) Open() error {
 
 	select {
 	case err = <-errChan:
-	case <-time.After(5 * time.Second):
+	case <-time.After(c.openTimeout):
 		err = errors.New("Open Timeout")
 	}
 
