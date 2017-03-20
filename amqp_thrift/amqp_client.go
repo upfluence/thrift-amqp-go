@@ -213,7 +213,7 @@ func (c *TAMQPClient) Close() error {
 
 func (c *TAMQPClient) Read(buf []byte) (int, error) {
 	if c.isOneway {
-		return errOneWay
+		return 0, errOneWay
 	}
 
 	return c.responseReader.Read(buf)
