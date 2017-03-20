@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	OpenTimeoutError = errors.New("Open timeout errror")
-	errOneWay        = errors.New("Can't read from it, one way mode only")
+	errOpenTimeout = errors.New("Open timeout errror")
+	errOneWay      = errors.New("Can't read from it, one way mode only")
 )
 
 type TAMQPClient struct {
@@ -112,7 +112,7 @@ func (c *TAMQPClient) Open() error {
 		select {
 		case err = <-errChan:
 		case <-time.After(c.openTimeout):
-			err = OpenTimeoutError
+			err = errOpenTimeout
 		}
 	} else {
 		err = <-errChan
