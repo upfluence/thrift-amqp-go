@@ -20,6 +20,8 @@ const (
 	DefaultExchangeName = "rpc-server-exchange"
 )
 
+var errTimeout = errors.New("Timeout reached")
+
 type TAMQPServer struct {
 	quit chan struct{}
 
@@ -213,13 +215,12 @@ func (s *TAMQPServer) AcceptLoop() error {
 
 			if len(delivery.Body) == 0 {
 				delivery.Ack(false)
-
 				s.reportError(errors.New("Message empty"))
 			} else {
 				client, _ := NewTAMQPDelivery(delivery, s.channel)
 
 				go func() {
-					if err := s.processRequests(client); err != nil {
+					if err := s.processRequest(client); err != nil {
 						s.reportError(err)
 					}
 				}()
@@ -238,7 +239,7 @@ func (p *TAMQPServer) Serve() error {
 	return p.AcceptLoop()
 }
 
-func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
+func (p *TAMQPServer) executeProcessor(client thrift.TTransport) error {
 	tFactory := thrift.NewTTransportFactory()
 	processor := p.processorFactory.GetProcessor(client)
 	inputTransport := tFactory.GetTransport(client)
@@ -252,10 +253,26 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 
 	outputProtocol := p.outputProtocolFactory.GetProtocol(outputTransport)
 
+	_, err := processor.Process(inputProtocol, outputProtocol)
+
+	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
+		client.(*TAMQPDelivery).Delivery.Ack(false)
+	}
+
+	if err != nil {
+		if errThrift, ok := err.(thrift.TTransportException); ok && errThrift.TypeId() != thrift.END_OF_FILE {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *TAMQPServer) processRequest(client thrift.TTransport) error {
 	defer func() {
 		if e := recover(); e != nil {
-			p.reportError(
-				errors.New(fmt.Sprintf("panic in processor: %s: %s", e, debug.Stack())),
+			s.reportError(
+				fmt.Errorf("panic in processor: %s: %s", e, debug.Stack()),
 			)
 			client.(*TAMQPDelivery).Delivery.Ack(false)
 		}
@@ -263,30 +280,18 @@ func (p *TAMQPServer) processRequests(client thrift.TTransport) error {
 
 	resultChan := make(chan error)
 
-	go func() {
-		_, err := processor.Process(inputProtocol, outputProtocol)
+	go func() { resultChan <- s.executeProcessor(client) }()
 
-		if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
-			client.(*TAMQPDelivery).Delivery.Ack(false)
-		}
-
-		if err != nil {
-			if errThrift, ok := err.(thrift.TTransportException); ok && errThrift.TypeId() != thrift.END_OF_FILE {
-				log.Println("error processing request:", err)
-				resultChan <- err
-				return
-			}
-		}
-		resultChan <- nil
-	}()
-
-	if p.options.Timeout != 0 {
-		go func() {
-			time.Sleep(p.options.Timeout)
-
-			resultChan <- errors.New("Timeout reached")
-		}()
+	if s.options.Timeout != 0 {
+		time.AfterFunc(
+			s.options.Timeout,
+			func() { resultChan <- errTimeout },
+		)
 	}
 
-	return <-resultChan
+	err := <-resultChan
+
+	client.(*TAMQPDelivery).Delivery.Ack(false)
+
+	return err
 }
