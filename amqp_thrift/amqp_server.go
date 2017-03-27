@@ -239,19 +239,19 @@ func (p *TAMQPServer) Serve() error {
 	return p.AcceptLoop()
 }
 
-func (p *TAMQPServer) executeProcessor(client thrift.TTransport) error {
+func (s *TAMQPServer) executeProcessor(client thrift.TTransport) error {
 	tFactory := thrift.NewTTransportFactory()
-	processor := p.processorFactory.GetProcessor(client)
+	processor := s.processorFactory.GetProcessor(client)
 	inputTransport := tFactory.GetTransport(client)
 	outputTransport := tFactory.GetTransport(client)
-	inputProtocol := p.inputProtocolFactory.GetProtocol(inputTransport)
+	inputProtocol := s.inputProtocolFactory.GetProtocol(inputTransport)
 
 	buf := bytes.NewBuffer(inputTransport.(*TAMQPDelivery).ReadBuffer.Bytes())
-	inputDupProtocol := p.inputProtocolFactory.GetProtocol(
+	inputDupProtocol := s.inputProtocolFactory.GetProtocol(
 		&TAMQPDelivery{ReadBuffer: buf},
 	)
 
-	outputProtocol := p.outputProtocolFactory.GetProtocol(outputTransport)
+	outputProtocol := s.outputProtocolFactory.GetProtocol(outputTransport)
 
 	_, err := processor.Process(inputProtocol, outputProtocol)
 
