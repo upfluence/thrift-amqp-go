@@ -1,14 +1,13 @@
 package amqp_thrift
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"runtime/debug"
 	"time"
 
 	"github.com/streadway/amqp"
+	"github.com/upfluence/goutils/log"
 	"github.com/upfluence/thrift/lib/go/thrift"
 )
 
@@ -20,7 +19,11 @@ const (
 	DefaultExchangeName = "rpc-server-exchange"
 )
 
-var errTimeout = errors.New("Timeout reached")
+var (
+	errTimeout       = errors.New("thrift/transport/amqp: Timeout reached")
+	errEmptyMessage  = errors.New("thrift/transport/amqp: Message empty")
+	errClosedChannel = errors.New("thrift/transport/amqp: Channel closed")
+)
 
 type TAMQPServer struct {
 	quit chan struct{}
@@ -202,7 +205,7 @@ func (s *TAMQPServer) reportError(err error) {
 	if s.errorLogger != nil {
 		(*s.errorLogger)(err)
 	} else {
-		log.Println("error processing request:", err)
+		log.Errorf("thrift/transport/amqp: error processing request:", err)
 	}
 }
 func (s *TAMQPServer) AcceptLoop() error {
@@ -210,12 +213,12 @@ func (s *TAMQPServer) AcceptLoop() error {
 		select {
 		case delivery, ok := <-s.deliveries:
 			if !ok {
-				return errors.New("Channel closed")
+				return errClosedChannel
 			}
 
 			if len(delivery.Body) == 0 {
 				delivery.Ack(false)
-				s.reportError(errors.New("Message empty"))
+				s.reportError(errEmptyMessage)
 			} else {
 				client, _ := NewTAMQPDelivery(delivery, s.channel)
 
@@ -240,45 +243,37 @@ func (p *TAMQPServer) Serve() error {
 }
 
 func (s *TAMQPServer) executeProcessor(client thrift.TTransport) error {
-	tFactory := thrift.NewTTransportFactory()
-	processor := s.processorFactory.GetProcessor(client)
-	inputTransport := tFactory.GetTransport(client)
-	outputTransport := tFactory.GetTransport(client)
-	inputProtocol := s.inputProtocolFactory.GetProtocol(inputTransport)
+	var (
+		tFactory  = thrift.NewTTransportFactory()
+		processor = s.processorFactory.GetProcessor(client)
 
-	buf := bytes.NewBuffer(inputTransport.(*TAMQPDelivery).ReadBuffer.Bytes())
-	inputDupProtocol := s.inputProtocolFactory.GetProtocol(
-		&TAMQPDelivery{ReadBuffer: buf},
+		inputTransport  = tFactory.GetTransport(client)
+		outputTransport = tFactory.GetTransport(client)
+
+		inputProtocol  = s.inputProtocolFactory.GetProtocol(inputTransport)
+		outputProtocol = s.outputProtocolFactory.GetProtocol(outputTransport)
 	)
-
-	outputProtocol := s.outputProtocolFactory.GetProtocol(outputTransport)
 
 	_, err := processor.Process(inputProtocol, outputProtocol)
 
-	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
-		return nil
-	}
-
-	if err != nil {
-		if errThrift, ok := err.(thrift.TTransportException); ok && errThrift.TypeId() != thrift.END_OF_FILE {
-			return err
-		}
-	}
-
-	return nil
+	return err
 }
 
 func (s *TAMQPServer) processRequest(client thrift.TTransport) error {
 	defer func() {
 		if e := recover(); e != nil {
 			s.reportError(
-				fmt.Errorf("panic in processor: %s: %s", e, debug.Stack()),
+				fmt.Errorf(
+					"thrift/transport/amqp: panic in processor: %s: %s",
+					e,
+					debug.Stack(),
+				),
 			)
 			client.(*TAMQPDelivery).Delivery.Ack(false)
 		}
 	}()
 
-	resultChan := make(chan error)
+	var resultChan = make(chan error)
 
 	go func() { resultChan <- s.executeProcessor(client) }()
 
@@ -291,7 +286,13 @@ func (s *TAMQPServer) processRequest(client thrift.TTransport) error {
 
 	err := <-resultChan
 
-	client.(*TAMQPDelivery).Delivery.Ack(false)
+	if errAck := client.(*TAMQPDelivery).Delivery.Ack(false); errAck != nil {
+		log.Errorf("thrift/trasnport/amqp: ack: %s", err.Error())
+	}
+
+	if errThrift, ok := err.(thrift.TTransportException); ok && errThrift.TypeId() == thrift.END_OF_FILE {
+		return nil
+	}
 
 	return err
 }
