@@ -256,7 +256,7 @@ func (s *TAMQPServer) executeProcessor(client thrift.TTransport) error {
 	_, err := processor.Process(inputProtocol, outputProtocol)
 
 	if _, t, _, _ := inputDupProtocol.ReadMessageBegin(); t == thrift.ONEWAY {
-		client.(*TAMQPDelivery).Delivery.Ack(false)
+		return nil
 	}
 
 	if err != nil {
