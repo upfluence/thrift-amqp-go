@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/streadway/amqp"
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/streadway/amqp"
 )
 
 type AMQPQueueReader struct {

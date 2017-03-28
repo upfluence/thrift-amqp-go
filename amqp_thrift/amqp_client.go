@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/streadway/amqp"
-	"github.com/upfluence/thrift/lib/go/thrift"
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/streadway/amqp"
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/upfluence/thrift/lib/go/thrift"
 )
 
 var (

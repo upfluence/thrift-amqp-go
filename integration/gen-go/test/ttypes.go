@@ -6,7 +6,7 @@ package test
 import (
 	"bytes"
 	"fmt"
-	"github.com/upfluence/thrift/lib/go/thrift"
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/upfluence/thrift/lib/go/thrift"
 )
 
 // (needed to ensure safety because of naive import list construction.)

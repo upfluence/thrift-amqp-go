@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/upfluence/thrift/lib/go/thrift"
 	"github.com/upfluence/thrift-amqp-go/amqp_thrift"
 	"github.com/upfluence/thrift-amqp-go/integration/gen-go/test"
-	"github.com/upfluence/thrift/lib/go/thrift"
 )
 
 var releaseChan = make(chan bool)

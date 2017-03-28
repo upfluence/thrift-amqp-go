@@ -6,9 +6,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/streadway/amqp"
-	"github.com/upfluence/goutils/log"
-	"github.com/upfluence/thrift/lib/go/thrift"
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/streadway/amqp"
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/upfluence/goutils/log"
+	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/upfluence/thrift/lib/go/thrift"
 )
 
 const (
