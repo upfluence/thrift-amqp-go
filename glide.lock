@@ -1,0 +1,19 @@
+hash: 3537b53da50b20bdff68d39260c028084d81903795b5df616d5b01fd05e24524
+updated: 2017-06-05T16:51:30.407516491-04:00
+imports:
+- name: github.com/cyberdelia/statsd
+  version: b1a41df90100a1421f276a4bacd664803a7b7f0b
+- name: github.com/op/go-logging
+  version: 970db520ece77730c7e4724c61121037378659d9
+- name: github.com/streadway/amqp
+  version: afe8eee29a74d213b1f3fb2586058157c397da60
+- name: github.com/upfluence/goutils
+  version: 6f866e4b0074150f9f4fe72bf00727e082dd1d6a
+  subpackages:
+  - log
+  - tracing
+- name: github.com/upfluence/thrift
+  version: 1b6f8cbd1fc0941811525a4dd926027541e3261a
+  subpackages:
+  - lib/go/thrift
+testImports: []

@@ -6,7 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/upfluence/thrift/lib/go/thrift"
+	"github.com/upfluence/thrift/lib/go/thrift"
 	"github.com/upfluence/thrift-amqp-go/integration/gen-go/test"
 	"math"
 	"net"

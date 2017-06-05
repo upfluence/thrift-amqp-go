@@ -3,8 +3,8 @@ package amqp_thrift
 import (
 	"bytes"
 
-	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/streadway/amqp"
-	"github.com/upfluence/thrift-amqp-go/Godeps/_workspace/src/github.com/upfluence/thrift/lib/go/thrift"
+	"github.com/streadway/amqp"
+	"github.com/upfluence/thrift/lib/go/thrift"
 )
 
 type TAMQPDelivery struct {
