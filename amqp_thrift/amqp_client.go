@@ -150,9 +150,9 @@ func (c *TAMQPClient) open() error {
 		err = <-channelClosing
 		c.connectionMu.Lock()
 		defer c.connectionMu.Unlock()
-		log.Errorf("thrift/transport/amqp: %s", err.Error())
 
 		for err != nil {
+			log.Errorf("thrift/transport/amqp: %s", err.Error())
 			time.Sleep(connectRetryDelay)
 
 			log.Warning("thrift/transport/amqp: will retry connection")
