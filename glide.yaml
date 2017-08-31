@@ -1,10 +1,11 @@
 package: github.com/upfluence/thrift-amqp-go
 import:
 - package: github.com/streadway/amqp
-- package: github.com/upfluence/goutils
+- package: github.com/upfluence/pkg
   version: ^0.1.0
   subpackages:
   - log
 - package: github.com/upfluence/thrift
+  version: ^1.0.0
   subpackages:
   - lib/go/thrift

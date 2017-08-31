@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/streadway/amqp"
-	"github.com/upfluence/goutils/log"
+	"github.com/upfluence/pkg/log"
 	"github.com/upfluence/thrift/lib/go/thrift"
 )
 
