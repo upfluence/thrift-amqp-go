@@ -38,6 +38,7 @@ type TAMQPClient struct {
 	openTimeout           time.Duration
 	isOneway              bool
 	connectionMu          sync.Mutex
+	closed                bool
 }
 
 func NewTAMQPClientFromConnAndQueue(
@@ -147,11 +148,20 @@ func (c *TAMQPClient) open() error {
 
 	go func() {
 		var err error
-		err = <-channelClosing
+		if err2 := <-channelClosing; err2 != nil {
+			err = err2
+		} else {
+			return
+		}
+
 		c.connectionMu.Lock()
 		defer c.connectionMu.Unlock()
 
 		for err != nil {
+			if c.closed {
+				return
+			}
+
 			log.Errorf("thrift/transport/amqp: %s", err.Error())
 			time.Sleep(connectRetryDelay)
 
@@ -225,10 +235,12 @@ func (c *TAMQPClient) open() error {
 }
 
 func (c *TAMQPClient) IsOpen() bool {
-	return c.Connection != nil && c.Channel != nil
+	return !c.closed && c.Connection != nil && c.Channel != nil
 }
 
 func (c *TAMQPClient) Close() error {
+	c.closed = true
+
 	if c.isOneway {
 		return nil
 	}
