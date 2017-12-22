@@ -54,8 +54,16 @@ func (r *AMQPQueueReader) Open() error {
 func (r *AMQPQueueReader) Consume() error {
 	for {
 		select {
-		case e := <-r.closeChan:
-			r.newData <- true
+		case e, ok := <-r.closeChan:
+			select {
+			case r.newData <- true:
+			default:
+			}
+
+			if !ok {
+				return nil
+			}
+
 			return e
 		case delivery, ok := <-r.deliveries:
 			if !ok {
